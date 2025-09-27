@@ -19,11 +19,10 @@ export default function PrepareScreen() {
 
   const [fontsLoaded] = useFonts({ Inter_400Regular, Inter_500Medium, Inter_600SemiBold });
 
-  // progress 0..1 for bar
   const [progress, setProgress] = useState(0);
   const progressAnim = useRef(new Animated.Value(0)).current;
 
-  const MIN_MS = 1500; // Increased minimum visible duration for better UX
+  const MIN_MS = 2200; 
   const startRef = useRef<number | null>(null);
   const hasNavigatedRef = useRef(false);
 
@@ -31,7 +30,6 @@ export default function PrepareScreen() {
     startRef.current = Date.now();
     hasNavigatedRef.current = false;
     
-    // Start the progress animation
     Animated.timing(progressAnim, {
       toValue: 0.95,
       duration: MIN_MS,
@@ -57,14 +55,12 @@ export default function PrepareScreen() {
       if (ready && minOk) {
         hasNavigatedRef.current = true;
         
-        // Complete the progress bar
         Animated.timing(progressAnim, {
           toValue: 1,
           duration: 300,
           easing: Easing.out(Easing.quad),
           useNativeDriver: false,
         }).start(() => {
-          // Navigate based on preferences
           if (!editMode && Array.isArray(preferredSports) && preferredSports.length > 0) {
             router.replace("/feed");
           } else {
@@ -130,21 +126,45 @@ export default function PrepareScreen() {
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: "#000" },
-  center: { alignItems: "center", paddingHorizontal: 32, marginTop: 120 },
-  title: { color: "#fff", fontSize: 18, fontFamily: "Inter_600SemiBold" as any, textAlign: "center" },
-  subtitle: { color: "#9CA3AF", fontSize: 13, fontFamily: "Inter_500Medium" as any, marginTop: 8, textAlign: "center" },
+  root: { flex: 1, backgroundColor: "#0A0A0A" },
+  center: {
+    alignItems: "center",
+    paddingHorizontal: 28,
+    marginTop: 160,
+  },
+  title: {
+    color: "#fff",
+    fontSize: 20,
+    fontFamily: "Inter_600SemiBold" as any,
+    textAlign: "center",
+    letterSpacing: 0.3,
+  },
+  subtitle: {
+    color: "#A1A1AA",
+    fontSize: 14,
+    fontFamily: "Inter_500Medium" as any,
+    marginTop: 10,
+    textAlign: "center",
+    lineHeight: 20,
+  },
   track: {
     width: "100%",
-    height: 10,
-    backgroundColor: "rgba(255,255,255,0.06)",
-    borderRadius: 10,
+    height: 12,
+    backgroundColor: "rgba(255,255,255,0.08)",
+    borderRadius: 12,
     overflow: "hidden",
+    marginTop: 24,
   },
   fill: {
     height: "100%",
     backgroundColor: "#3B82F6",
-    borderRadius: 10,
+    borderRadius: 12,
   },
-  small: { color: "#6B7280", fontSize: 12, fontFamily: "Inter_400Regular" as any, marginTop: 6, textAlign: "center" },
+  small: {
+    color: "#6B7280",
+    fontSize: 13,
+    fontFamily: "Inter_400Regular" as any,
+    marginTop: 14,
+    textAlign: "center",
+  },
 });
