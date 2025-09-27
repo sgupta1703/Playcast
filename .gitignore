@@ -47,3 +47,8 @@ app-example
 /output/*.mp4
 /output/*.wav
 
+# Video/audio
+*.mp4
+*.wav
+
+
