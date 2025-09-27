@@ -24,7 +24,6 @@ import { useAuthContext } from "./auth/AuthProvider";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 
-/* ---------- types & sample data unchanged ---------- */
 type Highlight = {
   id: string;
   videoUrl?: string;
@@ -83,7 +82,6 @@ const SAMPLE_HIGHLIGHTS: Highlight[] = [
   },
 ];
 
-/* ---------- StarRating & VideoItem unchanged (same UI as you had) ---------- */
 
 function StarRating({
   rating,
@@ -261,10 +259,8 @@ export default function FeedScreen() {
     <View style={[styles.screenRoot, { paddingTop: Platform.OS === "ios" ? insets.top : 0 }]}>
       <StatusBar style="light" />
 
-      {/* Edit button (top-right) */}
       <TouchableOpacity
         onPress={() => {
-          // open sport-selection in edit mode
           router.push({ pathname: "/sport-selection", params: { edit: "true" } });
         }}
         style={{

@@ -1,3 +1,4 @@
+// app/login.tsx
 import React, { useState, useEffect } from "react";
 import {
   View,
@@ -24,28 +25,36 @@ export default function LoginScreen() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [hasAttemptedLogin, setHasAttemptedLogin] = useState(false);
 
   const [fontsLoaded] = useFonts({ Inter_400Regular, Inter_500Medium, Inter_600SemiBold });
 
+  // Only redirect if user is already logged in and we haven't just attempted a login
   useEffect(() => {
-    if (user && !authLoading) {
+    if (user && !authLoading && !hasAttemptedLogin) {
       if (Array.isArray(preferredSports) && preferredSports.length > 0) {
         router.replace("/feed");
       } else {
         router.replace("/sport-selection");
       }
     }
-  }, [user, authLoading, preferredSports, router]);
+  }, [user, authLoading, preferredSports, router, hasAttemptedLogin]);
 
   if (!fontsLoaded) return null;
 
   const handleLogin = async () => {
     setError(null);
     setLoading(true);
+    setHasAttemptedLogin(true);
+    
     try {
+      // attempt sign in
       await signIn(email.trim(), password);
+      // On success, show the "prepare" screen while prefs are fetched and a short animation plays
+      router.replace("/prepare");
     } catch (e: any) {
       setError(e?.message ?? "Failed to sign in");
+      setHasAttemptedLogin(false); // Reset on error
     } finally {
       setLoading(false);
     }
@@ -86,7 +95,7 @@ export default function LoginScreen() {
         </TouchableOpacity>
 
         <View style={{ flexDirection: "row", marginTop: 12 }}>
-          <Text style={styles.small}>Don’t have an account?</Text>
+          <Text style={styles.small}>Don't have an account?</Text>
           <TouchableOpacity onPress={() => router.push("/signup")}>
             <Text style={[styles.small, { color: "#3B82F6", marginLeft: 8 }]}>Create account</Text>
           </TouchableOpacity>
