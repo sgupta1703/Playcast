@@ -1,25 +1,27 @@
-import React, { useRef, useEffect, useState, useMemo } from "react";
+// feed.tsx
 import {
-  View,
-  Text,
-  Dimensions,
-  FlatList,
-  TouchableOpacity,
-  StyleSheet,
-  Platform,
-} from "react-native";
-import { StatusBar } from "expo-status-bar";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Video, ResizeMode } from "expo-av";
-import {
-  useFonts,
-  Inter_400Regular,
-  Inter_500Medium,
-  Inter_600SemiBold,
-  Inter_700Bold,
+    Inter_400Regular,
+    Inter_500Medium,
+    Inter_600SemiBold,
+    Inter_700Bold,
+    useFonts,
 } from "@expo-google-fonts/inter";
-import { Star } from "lucide-react-native";
+import { ResizeMode, Video } from "expo-av";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import { StatusBar } from "expo-status-bar";
+import { Star } from "lucide-react-native";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import {
+    ActivityIndicator,
+    Dimensions,
+    FlatList,
+    Platform,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    View,
+} from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuthContext } from "./auth/AuthProvider";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
@@ -62,26 +64,7 @@ const SAMPLE_HIGHLIGHTS: Highlight[] = [
     score: "28-21",
     sport: "NFL",
   },
-  {
-    id: "4",
-    videoUrl:
-      "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4",
-    caption: "🎾 Ace down the middle to close the set — clinical!",
-    game: "S. Williams vs M. Sharapova",
-    score: "6-4, 6-3",
-    sport: "Wimbledon",
-  },
-  {
-    id: "5",
-    videoUrl:
-      "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4",
-    caption: "⚾ Big home run to put the game out of reach!",
-    game: "Yankees vs Red Sox",
-    score: "7-4",
-    sport: "MLB",
-  },
 ];
-
 
 function StarRating({
   rating,
@@ -141,7 +124,7 @@ function VideoItem({
         } else {
           await ref.pauseAsync();
         }
-      } catch (e) {
+      } catch {
         if (!mounted) return;
       }
     })();
@@ -173,10 +156,18 @@ function VideoItem({
             shouldPlay={isActive}
             useNativeControls={false}
             progressUpdateIntervalMillis={1000}
+            // ensure audio props available in case you need them later:
+            isMuted={false}
+            volume={1.0}
           />
         </TouchableOpacity>
       ) : (
-        <View style={[styles.itemRoot, { justifyContent: "center", alignItems: "center" }]}>
+        <View
+          style={[
+            styles.itemRoot,
+            { justifyContent: "center", alignItems: "center" },
+          ]}
+        >
           <Text style={styles.endTitle}>No new plays right now.</Text>
         </View>
       )}
@@ -211,23 +202,14 @@ export default function FeedScreen() {
   const [isPlaying, setIsPlaying] = useState<boolean>(true);
   const flatListRef = useRef<FlatList<Highlight>>(null);
 
-  const selectedSports = useMemo(() => {
-    try {
-      if (params?.selectedSports) {
-        const parsed = JSON.parse(params.selectedSports);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-      }
-    } catch {
-    }
-    return preferredSports ?? [];
-  }, [params?.selectedSports, preferredSports]);
+  const DEFAULT_BACKEND = "http://172.20.10.6:4000";
+  const ANDROID_EMULATOR_BACKEND = "http://10.0.2.2:4000";
+  const BACKEND_BASE =
+    Platform.OS === "android" ? ANDROID_EMULATOR_BACKEND : DEFAULT_BACKEND;
 
-  const filtered = useMemo(() => {
-    if (!selectedSports || selectedSports.length === 0) return SAMPLE_HIGHLIGHTS;
-    return SAMPLE_HIGHLIGHTS.filter((h) => selectedSports.includes(h.sport));
-  }, [selectedSports]);
-
-  const data: Highlight[] = useMemo(() => [...filtered, { id: "end", isEndMessage: true }], [filtered]);
+  const [backendReels, setBackendReels] = useState<Highlight[]>([]);
+  const [loadingReels, setLoadingReels] = useState(false);
+  const [reelsError, setReelsError] = useState<string | null>(null);
 
   const [fontsLoaded] = useFonts({
     Inter_400Regular,
@@ -236,15 +218,88 @@ export default function FeedScreen() {
     Inter_700Bold,
   });
 
+  const selectedSports = useMemo(() => {
+    try {
+      if (params?.selectedSports) {
+        const parsed = JSON.parse(params.selectedSports);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch {
+      // ignore
+    }
+    return preferredSports ?? [];
+  }, [params?.selectedSports, preferredSports]);
+
+  // Fetch reels list from backend
+  useEffect(() => {
+    let mounted = true;
+    async function loadReelsFromApi() {
+      setLoadingReels(true);
+      setReelsError(null);
+      try {
+        const res = await fetch(`${BACKEND_BASE}/api/reels`);
+        if (!res.ok) throw new Error(`status ${res.status}`);
+        const json = await res.json();
+        if (!mounted) return;
+
+        const mapped: Highlight[] = (json || []).map((r: any) => ({
+          id: r.file,
+          videoUrl: r.url,
+          caption: r.caption,
+          game: "",
+          score: "",
+          sport: "NFL",
+        }));
+
+        setBackendReels(mapped);
+      } catch (err: any) {
+        console.warn("Failed to load reels API:", err?.message || err);
+        if (mounted) setReelsError(String(err?.message || err));
+      } finally {
+        if (mounted) setLoadingReels(false);
+      }
+    }
+    loadReelsFromApi();
+    return () => {
+      mounted = false;
+    };
+  }, [BACKEND_BASE]);
+
+  // Compose final filtered list
+  const filtered = useMemo(() => {
+    const reelSource = backendReels;
+    if (!selectedSports || selectedSports.length === 0) {
+      const nonNflSamples = SAMPLE_HIGHLIGHTS.filter((h) => h.sport !== "NFL");
+      return [...reelSource, ...nonNflSamples];
+    }
+    const wantsNFL = selectedSports.includes("NFL");
+    const sampleFiltered = SAMPLE_HIGHLIGHTS.filter(
+      (h) => selectedSports.includes(h.sport) && h.sport !== "NFL"
+    );
+    return wantsNFL ? [...reelSource, ...sampleFiltered] : sampleFiltered;
+  }, [selectedSports, backendReels]);
+
+  const data: Highlight[] = useMemo(
+    () => [...filtered, { id: "end", isEndMessage: true }],
+    [filtered]
+  );
+
   useEffect(() => {
     flatListRef.current?.scrollToOffset({ offset: 0, animated: false });
     setCurrentIndex(0);
   }, [selectedSports]);
 
+  // FIX: when the End message is the visible item we set currentIndex to -1
+  // so that no Video is considered active (prevents a previous video from continuing to play)
   const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: any[] }) => {
     if (viewableItems.length > 0) {
       const vi = viewableItems[0];
-      if (vi?.item?.isEndMessage) return;
+      // if the visible item is the "end" message, deactivate playback
+      if (vi?.item?.isEndMessage) {
+        setCurrentIndex(-1); // no video will match this index
+        return;
+      }
+      // otherwise set the currently visible index so that its Video plays
       setCurrentIndex(vi.index);
     }
   }).current;
@@ -278,6 +333,24 @@ export default function FeedScreen() {
       >
         <Text style={{ color: "#fff", fontSize: 14 }}>⚙️</Text>
       </TouchableOpacity>
+
+      {loadingReels && (
+        <View style={{ position: "absolute", top: 80, left: 0, right: 0, alignItems: "center", zIndex: 30 }}>
+          <View style={{ backgroundColor: "rgba(0,0,0,0.6)", padding: 8, borderRadius: 8 }}>
+            <ActivityIndicator color="#fff" />
+            <Text style={{ color: "#fff", marginTop: 6 }}>Loading NFL highlights...</Text>
+          </View>
+        </View>
+      )}
+
+      {reelsError && (
+        <View style={{ position: "absolute", top: 80, left: 0, right: 0, alignItems: "center", zIndex: 30 }}>
+          <View style={{ backgroundColor: "rgba(255,0,0,0.6)", padding: 8, borderRadius: 8 }}>
+            <Text style={{ color: "#fff", marginTop: 0 }}>Failed to load NFL highlights</Text>
+            <Text style={{ color: "#fff", marginTop: 6, fontSize: 12 }}>{reelsError}</Text>
+          </View>
+        </View>
+      )}
 
       <FlatList
         ref={flatListRef}
