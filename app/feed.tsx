@@ -1,4 +1,3 @@
-// app/feed.tsx
 import React, { useRef, useEffect, useState, useMemo } from "react";
 import {
   View,
@@ -204,7 +203,6 @@ function VideoItem({
   );
 }
 
-/* ---------- Screen (main) ---------- */
 export default function FeedScreen() {
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams() as { selectedSports?: string };
@@ -215,7 +213,6 @@ export default function FeedScreen() {
   const [isPlaying, setIsPlaying] = useState<boolean>(true);
   const flatListRef = useRef<FlatList<Highlight>>(null);
 
-  // priority: route params, otherwise saved prefs
   const selectedSports = useMemo(() => {
     try {
       if (params?.selectedSports) {
@@ -223,7 +220,6 @@ export default function FeedScreen() {
         if (Array.isArray(parsed) && parsed.length > 0) return parsed;
       }
     } catch {
-      /* ignore */
     }
     return preferredSports ?? [];
   }, [params?.selectedSports, preferredSports]);
@@ -307,7 +303,6 @@ export default function FeedScreen() {
   );
 }
 
-/* ---------- Styles (same as before) ---------- */
 const styles = StyleSheet.create({
   screenRoot: {
     flex: 1,

@@ -1,4 +1,3 @@
-// app/sport-selection.tsx
 import React, { useState, useEffect } from "react";
 import { View, Text, ScrollView, TouchableOpacity, Dimensions } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -28,16 +27,12 @@ export default function SportSelectionScreen() {
   const [selectedSports, setSelectedSports] = useState<string[]>([]);
   const [fontsLoaded] = useFonts({ Inter_400Regular, Inter_500Medium, Inter_600SemiBold, Inter_700Bold });
 
-  // initialize local state from saved prefs
   useEffect(() => {
     setSelectedSports(preferredSports ?? []);
   }, [preferredSports]);
 
-  // Redirect to feed automatically if user is signed in, not loading, and has saved prefs,
-  // unless the screen was opened with edit=true
   useEffect(() => {
     if (!loading && user && !editMode && Array.isArray(preferredSports) && preferredSports.length > 0) {
-      // replace so there's no back button to selection on first login
       router.replace("/feed");
     }
   }, [loading, user, preferredSports, editMode, router]);
@@ -52,7 +47,6 @@ export default function SportSelectionScreen() {
     } catch (e) {
       console.warn("Failed to save preferences:", e);
     }
-    // navigate to feed and pass selections for immediate filtering
     router.push({ pathname: "/feed", params: { selectedSports: JSON.stringify(selectedSports) } });
   };
 

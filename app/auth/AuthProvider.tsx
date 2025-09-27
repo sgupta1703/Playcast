@@ -1,4 +1,3 @@
-// app/auth/AuthProvider.tsx
 import React, { createContext, useEffect, useState, useContext } from "react";
 import { auth, db } from "../firebase";
 import {
@@ -27,7 +26,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [preferredSports, setPreferredSportsState] = useState<string[]>([]);
 
-  // load user and their prefs
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (u) => {
       setUser(u);
@@ -40,7 +38,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             const data = snap.data();
             setPreferredSportsState(Array.isArray(data?.preferredSports) ? data.preferredSports : []);
           } else {
-            // no doc yet -> default empty
             setPreferredSportsState([]);
           }
         } catch (e) {
@@ -55,7 +52,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return unsub;
   }, []);
 
-  // persisted setter that writes to Firestore for authenticated users
   const setPreferredSports = async (sports: string[]) => {
     setPreferredSportsState(sports);
     if (!user) return;
@@ -78,7 +74,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setLoading(true);
     try {
       await signInWithEmailAndPassword(auth, email, password);
-      // onAuthStateChanged handler will fetch prefs
     } finally {
       setLoading(false);
     }
@@ -88,7 +83,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setLoading(true);
     try {
       const cred = await createUserWithEmailAndPassword(auth, email, password);
-      // create initial user doc (empty prefs)
       try {
         const userDocRef = doc(db, "users", cred.user.uid);
         await setDoc(userDocRef, { preferredSports: [] }, { merge: true });
