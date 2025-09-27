@@ -1,5 +1,4 @@
 {
-<<<<<<< HEAD
   "name": "playcast-backend",
   "version": "0.1.0",
   "main": "src/index.js",
@@ -31,26 +30,4 @@
   "keywords": [],
   "author": "",
   "type": "commonjs"
-=======
-  "name": "backend",
-  "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
-  "scripts": {
-    "start": "node src/server.js",
-    "dev": "nodemon src/server.js"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "dependencies": {
-    "axios": "^1.12.2",
-    "cors": "^2.8.5",
-    "dotenv": "^17.2.2",
-    "express": "^5.1.0"
-  },
-  "devDependencies": {
-    "nodemon": "^3.1.10"
-  }
->>>>>>> e766a682c8e3aff8971faf5b7936f6d96ab0c828
 }
