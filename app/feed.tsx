@@ -20,10 +20,12 @@ import {
   Inter_700Bold,
 } from "@expo-google-fonts/inter";
 import { Star } from "lucide-react-native";
-import { useLocalSearchParams } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
+import { useAuthContext } from "./auth/AuthProvider";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 
+/* ---------- types & sample data unchanged ---------- */
 type Highlight = {
   id: string;
   videoUrl?: string;
@@ -82,7 +84,8 @@ const SAMPLE_HIGHLIGHTS: Highlight[] = [
   },
 ];
 
-/** ---------- Star rating component (reusable) ---------- */
+/* ---------- StarRating & VideoItem unchanged (same UI as you had) ---------- */
+
 function StarRating({
   rating,
   onChange,
@@ -117,7 +120,6 @@ function StarRating({
   );
 }
 
-/** ---------- Single video item ---------- */
 function VideoItem({
   item,
   isActive,
@@ -130,7 +132,6 @@ function VideoItem({
   const videoRef = useRef<Video | null>(null);
   const [rating, setRating] = useState<number>(0);
 
-  // Play/pause when active changes
   useEffect(() => {
     const ref = videoRef.current;
     if (!ref) return;
@@ -144,7 +145,6 @@ function VideoItem({
           await ref.pauseAsync();
         }
       } catch (e) {
-        // ignore play/pause errors (network/emulator)
         if (!mounted) return;
       }
     })();
@@ -166,11 +166,7 @@ function VideoItem({
   return (
     <View style={styles.itemRoot}>
       {item.videoUrl ? (
-        <TouchableOpacity
-          activeOpacity={1}
-          style={{ flex: 1 }}
-          onPress={onTogglePlay}
-        >
+        <TouchableOpacity activeOpacity={1} style={{ flex: 1 }} onPress={onTogglePlay}>
           <Video
             ref={videoRef}
             source={{ uri: item.videoUrl }}
@@ -179,7 +175,6 @@ function VideoItem({
             isLooping
             shouldPlay={isActive}
             useNativeControls={false}
-            // avoid audio ducking differences on Android
             progressUpdateIntervalMillis={1000}
           />
         </TouchableOpacity>
@@ -189,7 +184,6 @@ function VideoItem({
         </View>
       )}
 
-      {/* Caption card */}
       <View style={styles.captionCard}>
         <Text style={styles.captionText}>{item.caption}</Text>
 
@@ -210,33 +204,36 @@ function VideoItem({
   );
 }
 
-/** ---------- Screen (main) ---------- */
+/* ---------- Screen (main) ---------- */
 export default function FeedScreen() {
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams() as { selectedSports?: string };
+  const { preferredSports } = useAuthContext();
+  const router = useRouter();
+
   const [currentIndex, setCurrentIndex] = useState<number>(0);
   const [isPlaying, setIsPlaying] = useState<boolean>(true);
   const flatListRef = useRef<FlatList<Highlight>>(null);
 
+  // priority: route params, otherwise saved prefs
   const selectedSports = useMemo(() => {
     try {
-      return params.selectedSports ? JSON.parse(params.selectedSports) : [];
+      if (params?.selectedSports) {
+        const parsed = JSON.parse(params.selectedSports);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
     } catch {
-      return [];
+      /* ignore */
     }
-  }, [params.selectedSports]);
+    return preferredSports ?? [];
+  }, [params?.selectedSports, preferredSports]);
 
-  // Filter data by selected sports (if any)
   const filtered = useMemo(() => {
     if (!selectedSports || selectedSports.length === 0) return SAMPLE_HIGHLIGHTS;
     return SAMPLE_HIGHLIGHTS.filter((h) => selectedSports.includes(h.sport));
   }, [selectedSports]);
 
-  // append end-of-feed message
-  const data: Highlight[] = useMemo(
-    () => [...filtered, { id: "end", isEndMessage: true }],
-    [filtered]
-  );
+  const data: Highlight[] = useMemo(() => [...filtered, { id: "end", isEndMessage: true }], [filtered]);
 
   const [fontsLoaded] = useFonts({
     Inter_400Regular,
@@ -246,7 +243,6 @@ export default function FeedScreen() {
   });
 
   useEffect(() => {
-    // if we switch data sets, snap to top
     flatListRef.current?.scrollToOffset({ offset: 0, animated: false });
     setCurrentIndex(0);
   }, [selectedSports]);
@@ -269,6 +265,28 @@ export default function FeedScreen() {
     <View style={[styles.screenRoot, { paddingTop: Platform.OS === "ios" ? insets.top : 0 }]}>
       <StatusBar style="light" />
 
+      {/* Edit button (top-right) */}
+      <TouchableOpacity
+        onPress={() => {
+          // open sport-selection in edit mode
+          router.push({ pathname: "/sport-selection", params: { edit: "true" } });
+        }}
+        style={{
+          position: "absolute",
+          top: (Platform.OS === "ios" ? insets.top : 16) + 8,
+          right: 16,
+          zIndex: 20,
+          backgroundColor: "rgba(255,255,255,0.04)",
+          padding: 10,
+          borderRadius: 10,
+          borderWidth: 1,
+          borderColor: "rgba(255,255,255,0.06)",
+        }}
+        accessibilityLabel="Edit preferences"
+      >
+        <Text style={{ color: "#fff", fontSize: 14 }}>⚙️</Text>
+      </TouchableOpacity>
+
       <FlatList
         ref={flatListRef}
         data={data}
@@ -289,7 +307,7 @@ export default function FeedScreen() {
   );
 }
 
-/** ---------- Styles ---------- */
+/* ---------- Styles (same as before) ---------- */
 const styles = StyleSheet.create({
   screenRoot: {
     flex: 1,

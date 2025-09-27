@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -17,13 +17,25 @@ import { useAuthContext } from "./auth/AuthProvider";
 export default function LoginScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { signIn } = useAuthContext();
+
+  const { signIn, user, loading: authLoading, preferredSports } = useAuthContext();
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   const [fontsLoaded] = useFonts({ Inter_400Regular, Inter_500Medium, Inter_600SemiBold });
+
+  useEffect(() => {
+    if (user && !authLoading) {
+      if (Array.isArray(preferredSports) && preferredSports.length > 0) {
+        router.replace("/feed");
+      } else {
+        router.replace("/sport-selection");
+      }
+    }
+  }, [user, authLoading, preferredSports, router]);
 
   if (!fontsLoaded) return null;
 
@@ -32,8 +44,6 @@ export default function LoginScreen() {
     setLoading(true);
     try {
       await signIn(email.trim(), password);
-      // On success, go to sport selection
-      router.replace("/sport-selection");
     } catch (e: any) {
       setError(e?.message ?? "Failed to sign in");
     } finally {
