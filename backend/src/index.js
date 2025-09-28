@@ -7,10 +7,19 @@ const path = require("path");
 const fs = require("fs");
 const { OUTPUT_DIR } = require("./config");
 
+const SPORTS = {
+  football: { reels: "reels", info: "info" }, // legacy
+  basketball: { reels: "reels_basketball", info: "info_basketball" },
+  tennis: { reels: "reels_tennis", info: "info_tennis" },
+  baseball: { reels: "reels_baseball", info: "info_baseball" },
+  soccer: { reels: "reels_soccer", info: "info_soccer" }
+};
+
 ensureDir(path.resolve(OUTPUT_DIR));
-ensureDir(path.resolve(OUTPUT_DIR, "reels"));
-ensureDir(path.resolve(OUTPUT_DIR, "audio"));
-ensureDir(path.resolve(OUTPUT_DIR, "info")); 
+Object.values(SPORTS).forEach(({ reels, info }) => {
+  ensureDir(path.resolve(OUTPUT_DIR, reels));
+  ensureDir(path.resolve(OUTPUT_DIR, info));
+});
 
 const app = express();
 
@@ -28,8 +37,9 @@ app.get("/", (req, res) => {
       "POST /process-game",
       "GET /status/:jobId",
       "GET /reels",
-      "GET /reels/:filename",
-      "GET /info/:filename"
+      "GET /reels/:sport",
+      "GET /reels/:sport/:filename",
+      "GET /info/:sport/:filename"
     ]
   });
 });
@@ -45,7 +55,8 @@ app.post("/process-game", async (req, res) => {
     });
   }
 
-  const jobId = Date.now().toString(36) + "-" + Math.floor(Math.random() * 10000);
+  const jobId =
+    Date.now().toString(36) + "-" + Math.floor(Math.random() * 10000);
   jobs[jobId] = {
     status: "queued",
     created: new Date().toISOString(),
@@ -53,7 +64,6 @@ app.post("/process-game", async (req, res) => {
   };
 
   console.log(`Created job ${jobId} for ${away} @ ${home}, ${season} week ${week}`);
-
   res.json({ jobId, status: "queued" });
 
   (async () => {
@@ -74,22 +84,24 @@ app.post("/process-game", async (req, res) => {
       jobs[jobId].result = result;
       jobs[jobId].finished = new Date().toISOString();
 
-      console.log(`Job ${jobId} completed successfully. Generated ${result.reels?.length || 0} reels.`);
-
+      console.log(
+        `Job ${jobId} completed successfully. Generated ${
+          result.reels?.length || 0
+        } reels.`
+      );
     } catch (err) {
       console.error(`Job ${jobId} failed:`, err.message);
       jobs[jobId].status = "error";
       jobs[jobId].error = err.message;
-      jobs[jobId].stack = process.env.NODE_ENV === 'development' ? err.stack : undefined;
+      jobs[jobId].stack =
+        process.env.NODE_ENV === "development" ? err.stack : undefined;
     }
   })();
 });
 
 app.get("/status/:jobId", (req, res) => {
   const job = jobs[req.params.jobId];
-  if (!job) {
-    return res.status(404).json({ error: "Job not found" });
-  }
+  if (!job) return res.status(404).json({ error: "Job not found" });
   res.json(job);
 });
 
@@ -103,37 +115,61 @@ app.get("/jobs", (req, res) => {
   res.json(jobList);
 });
 
-// List generated reels
-app.get("/reels", (req, res) => {
-  try {
-    const reelsDir = path.resolve(OUTPUT_DIR, "reels");
-    const infoDir = path.resolve(OUTPUT_DIR, "info");
+function listReelsForSport(sp) {
+  const dirs = SPORTS[sp];
+  if (!dirs) return [];
+  const reelsDir = path.resolve(OUTPUT_DIR, dirs.reels);
+  const infoDir = path.resolve(OUTPUT_DIR, dirs.info);
 
-    if (!fs.existsSync(reelsDir)) {
-      return res.json([]);
+  if (!fs.existsSync(reelsDir)) return [];
+
+  return fs.readdirSync(reelsDir)
+    .filter(f => f.match(/\.(mov|mp4)$/i))
+    .map(f => {
+      const filePath = path.join(reelsDir, f);
+      const stats = fs.statSync(filePath);
+
+      const baseName = f.replace(/\.(mov|mp4)$/i, "");
+      const infoJsonFilename = `${baseName}.json`;
+      const infoTxtFilename = `${baseName}.txt`;
+      const infoJsonPath = path.join(infoDir, infoJsonFilename);
+      const infoTxtPath = path.join(infoDir, infoTxtFilename);
+
+      let infoUrl = null;
+      if (fs.existsSync(infoJsonPath)) {
+        infoUrl = `/info/${sp}/${infoJsonFilename}`;
+      } else if (fs.existsSync(infoTxtPath)) {
+        infoUrl = `/info/${sp}/${infoTxtFilename}`;
+      }
+
+      return {
+        sport: sp,
+        file: f,
+        url: `/reels/${sp}/${f}`,
+        infoUrl: infoUrl,
+        size: stats.size,
+        created: stats.birthtime
+      };
+    });
+}
+
+app.get("/reels/:sport?", (req, res) => {
+  try {
+    const { sport } = req.params;
+    let files = [];
+
+    if (sport) {
+      if (!SPORTS[sport]) {
+        return res.status(400).json({ error: `Unknown sport: ${sport}` });
+      }
+      files = listReelsForSport(sport);
+    } else {
+      Object.keys(SPORTS).forEach(sp => {
+        files.push(...listReelsForSport(sp));
+      });
     }
 
-    const files = fs.readdirSync(reelsDir)
-      .filter((f) => f.endsWith(".mp4"))
-      .map(f => {
-        const filePath = path.join(reelsDir, f);
-        const stats = fs.statSync(filePath);
-
-        // Check for info file
-        const infoFilename = f.replace(/\.mp4$/i, ".txt");
-        const infoPath = path.join(infoDir, infoFilename);
-        const infoExists = fs.existsSync(infoPath);
-
-        return {
-          file: f,
-          url: `/reels/${f}`,
-          infoUrl: infoExists ? `/info/${infoFilename}` : null,
-          size: stats.size,
-          created: stats.birthtime
-        };
-      })
-      .sort((a, b) => new Date(b.created) - new Date(a.created)); // Latest first
-
+    files.sort((a, b) => new Date(b.created) - new Date(a.created));
     res.json(files);
   } catch (error) {
     console.error("Error listing reels:", error);
@@ -141,35 +177,35 @@ app.get("/reels", (req, res) => {
   }
 });
 
-app.use("/reels", (req, res, next) => {
-  res.header("Access-Control-Allow-Origin", "*");
-  res.header("Content-Type", "video/mp4");
-  next();
-}, express.static(path.resolve(OUTPUT_DIR, "reels")));
+Object.entries(SPORTS).forEach(([sp, dirs]) => {
+  app.use(`/reels/${sp}`, (req, res, next) => {
+    res.header("Access-Control-Allow-Origin", "*");
+    next();
+  }, express.static(path.resolve(OUTPUT_DIR, dirs.reels)));
 
-app.use("/info", (req, res, next) => {
-  res.header("Access-Control-Allow-Origin", "*");
-  res.header("Content-Type", "text/plain; charset=utf-8");
-  next();
-}, express.static(path.resolve(OUTPUT_DIR, "info")));
+  app.use(`/info/${sp}`, (req, res, next) => {
+    res.header("Access-Control-Allow-Origin", "*");
+    next();
+  }, express.static(path.resolve(OUTPUT_DIR, dirs.info)));
+});
 
 app.use((err, req, res, next) => {
   console.error("Unhandled error:", err);
   res.status(500).json({
     error: "Internal server error",
-    message: process.env.NODE_ENV === 'development' ? err.message : undefined
+    message: process.env.NODE_ENV === "development" ? err.message : undefined
   });
 });
 
 const PORT = process.env.PORT || 4000;
-
 app.listen(PORT, () => {
   console.log(`PlayCast backend listening on http://localhost:${PORT}`);
-  console.log(`API endpoints:`);
-  console.log(`  POST /process-game - Start game processing`);
-  console.log(`  GET /status/:jobId - Check job status`);
-  console.log(`  GET /reels - List generated reels`);
-  console.log(`  GET /reels/:filename - Download reel file`);
-  console.log(`  GET /info/:filename - Download reel info (.txt)`);
+  console.log("API endpoints:");
+  console.log("  POST /process-game - Start game processing");
+  console.log("  GET /status/:jobId - Check job status");
+  console.log("  GET /reels - List reels for all sports");
+  console.log("  GET /reels/:sport - List reels for one sport");
+  console.log("  GET /reels/:sport/:filename - Download reel");
+  console.log("  GET /info/:sport/:filename - Download reel info (.json or .txt)");
   console.log(`Output directory: ${OUTPUT_DIR}`);
 });

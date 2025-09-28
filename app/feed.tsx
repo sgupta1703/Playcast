@@ -334,7 +334,6 @@ const panResponder = useRef(
 
         <StarRating rating={rating} onChange={handleRatingChange} />
         
-        {/* Add visual hint for swipe gesture */}
         <View style={styles.swipeHint}>
           <Text style={styles.swipeHintText}>← Swipe left for details</Text>
         </View>
@@ -553,93 +552,181 @@ export default function FeedScreen() {
     return preferredSports ?? [];
   }, [params?.selectedSports, preferredSports]);
 
+  const SPORT_ID_TO_BACKEND_KEY: Record<string, string> = {
+  NFL: "football",
+  NBA: "basketball",
+  "World Cup": "soccer",
+  Wimbledon: "tennis",
+  MLB: "baseball",
+};
+
+const BACKEND_KEY_TO_DISPLAY: Record<string, string> = {
+  football: "NFL",
+  basketball: "NBA",
+  soccer: "World Cup",
+  tennis: "Wimbledon",
+  baseball: "MLB",
+};
+
+
+function parseInfoText(text: string) {
+  const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  const out: any = { title: "", who: "", score: "" };
+
+  for (const line of lines) {
+    const idx = line.indexOf(":");
+    if (idx === -1) continue;
+    const key = line.slice(0, idx).trim().toLowerCase();
+    const val = line.slice(idx + 1).trim();
+    if (key === "title") out.title = val;
+    else if (key === "who") out.who = val;
+    else if (key === "score") out.score = val;
+    else out[key] = val;
+  }
+
+  const scoreMatch = out.score.match(/^\s*([0-9]+)\s*\(([^)]+)\)\s*-\s*([0-9]+)\s*\(([^)]+)\)\s*$/);
+  if (scoreMatch) {
+    const [, awayPts, awayAlias, homePts, homeAlias] = scoreMatch;
+    out.teams = {
+      away: { alias: (awayAlias || "").trim(), points: parseInt(awayPts, 10) },
+      home: { alias: (homeAlias || "").trim(), points: parseInt(homePts, 10) },
+    };
+  }
+
+  return out;
+}
+
   const [detailsVisible, setDetailsVisible] = useState(false);
   const [detailsInfo, setDetailsInfo] = useState<any | null>(null);
 
-  useEffect(() => {
-    let mounted = true;
-    async function loadReelsFromApi() {
-      setLoadingReels(true);
-      setReelsError(null);
+useEffect(() => {
+  let mounted = true;
+  async function loadReelsFromApi() {
+    setLoadingReels(true);
+    setReelsError(null);
 
-      try {
-        const listRes = await fetch(`${BACKEND_BASE}/reels`);
-        if (!listRes.ok) throw new Error(`status ${listRes.status}`);
-        const listJson = await listRes.json();
+    try {
+      const listRes = await fetch(`${BACKEND_BASE}/reels`);
+      if (!listRes.ok) throw new Error(`status ${listRes.status}`);
+      const listJson = await listRes.json();
 
-        const mappedPromises = (listJson || []).map(async (r: any) => {
-          const file = r.file as string;
-          const videoUrl = r.url ? `${BACKEND_BASE}${r.url}` : undefined;
-          let caption = "";
-          let game = "";
-          let score = "";
-          let infoRaw: any = null;
+      const mappedPromises = (listJson || []).map(async (r: any) => {
+        const file = r.file as string;
+        const backendSportKey = r.sport ?? "football";
+        const displaySport = BACKEND_KEY_TO_DISPLAY[backendSportKey] ?? backendSportKey.toUpperCase();
 
-          if (r.infoUrl) {
-            try {
-              const infoRes = await fetch(`${BACKEND_BASE}${r.infoUrl}`);
-              if (infoRes.ok) {
-                infoRaw = await infoRes.json();
+        const videoUrl = r.url ? `${BACKEND_BASE}${r.url}` : undefined;
+        let caption = "";
+        let game = "";
+        let score = "";
+        let infoRaw: any = null;
 
-                const desc = typeof infoRaw.description === "string" ? infoRaw.description : "";
-                const q = infoRaw.quarter != null ? infoRaw.quarter : undefined;
-                const clock = infoRaw.clock || undefined;
-                caption = desc || "";
-                if (q !== undefined && clock) {
-                  caption = caption ? `${caption} — Q${q} ${clock}` : `Q${q} ${clock}`;
-                }
+        if (r.infoUrl) {
+          try {
+            const infoRes = await fetch(`${BACKEND_BASE}${r.infoUrl}`);
+            if (infoRes.ok) {
+              const txt = await infoRes.text();
 
-                if (infoRaw.teams && infoRaw.teams.home && infoRaw.teams.away) {
-                  const home = infoRaw.teams.home;
-                  const away = infoRaw.teams.away;
-                  const homeAlias = home.alias || home.name || "HOME";
-                  const awayAlias = away.alias || away.name || "AWAY";
-                  game = `${awayAlias} @ ${homeAlias}`;
-                  const homePts = (typeof home.points === "number" || typeof home.points === "string") ? String(home.points) : "";
-                  const awayPts = (typeof away.points === "number" || typeof away.points === "string") ? String(away.points) : "";
-                  if (awayPts !== "" || homePts !== "") {
-                    score = `${awayPts !== "" ? awayPts : "0"}-${homePts !== "" ? homePts : "0"}`;
-                  }
+              let parsed: any = null;
+              try {
+                const j = JSON.parse(txt);
+
+                const away = j?.teams?.away ?? null;
+                const home = j?.teams?.home ?? null;
+
+                parsed = {
+                  title: j.title ?? "",
+                  description: j.description ?? "",
+                  teams: j.teams ?? null,
+                  quarter: j.quarter ?? undefined,
+                  clock: j.clock ?? undefined,
+                  playIndex: j.playIndex ?? undefined,
+                  jobId: j.jobId ?? undefined,
+                  who: j.who ??
+                    (j.teams
+                      ? `${away?.alias ?? away?.name ?? ""} vs ${home?.alias ?? home?.name ?? ""}`.trim()
+                      : ""),
+                  score:
+                    j.score ??
+                    (j.teams && (away?.points !== undefined || home?.points !== undefined)
+                      ? `${away?.points ?? 0} (${away?.alias ?? away?.name ?? ""}) - ${home?.points ?? 0} (${home?.alias ?? home?.name ?? ""})`
+                      : ""),
+                };
+              } catch (jsonErr) {
+                parsed = parseInfoText(txt);
+              }
+
+              infoRaw = parsed;
+
+              caption = (parsed.title && String(parsed.title).trim()) ||
+                        (parsed.description && String(parsed.description).trim()) ||
+                        caption ||
+                        file;
+
+              if (parsed.who && String(parsed.who).trim()) {
+                game = parsed.who;
+              } else if (parsed.teams) {
+                const awayLabel = parsed.teams.away?.alias ?? parsed.teams.away?.name ?? "";
+                const homeLabel = parsed.teams.home?.alias ?? parsed.teams.home?.name ?? "";
+                game = `${awayLabel} @ ${homeLabel}`.trim();
+              }
+
+              if (parsed.score && String(parsed.score).trim()) {
+                score = parsed.score;
+              } else if (parsed.teams) {
+                const awayPts = parsed.teams.away?.points;
+                const homePts = parsed.teams.home?.points;
+                if (awayPts !== undefined || homePts !== undefined) {
+                  score = `${awayPts ?? 0} - ${homePts ?? 0}`;
                 }
               }
-            } catch {
+            } else {
+              console.warn("Info fetch returned non-OK:", r.infoUrl, infoRes.status);
             }
+          } catch (e) {
+            console.warn("Failed to fetch/parse info for", file, e);
           }
+        }
 
-          return {
-            id: file,
-            videoUrl,
-            caption,
-            game,
-            score,
-            sport: "NFL",
-            infoRaw,
-          } as Highlight;
-        });
+        const id = `${backendSportKey}-${file}`;
 
-        const mapped = await Promise.all(mappedPromises);
-        if (!mounted) return;
-        setBackendReels(mapped);
-      } catch (err: any) {
-        if (mounted) setReelsError(String(err?.message || err));
-      } finally {
-        if (mounted) setLoadingReels(false);
-      }
+        return {
+          id,
+          file,
+          videoUrl,
+          caption,
+          game,
+          score,
+          sport: displaySport, 
+          infoRaw,
+        } as Highlight;
+      });
+
+      const mapped = await Promise.all(mappedPromises);
+      if (!mounted) return;
+      setBackendReels(mapped);
+    } catch (err: any) {
+      if (mounted) setReelsError(String(err?.message || err));
+    } finally {
+      if (mounted) setLoadingReels(false);
     }
-    loadReelsFromApi();
-    return () => {
-      mounted = false;
-    };
-  }, [BACKEND_BASE]);
+  }
+  loadReelsFromApi();
+  return () => {
+    mounted = false;
+  };
+}, [BACKEND_BASE]);
 
   const filtered = useMemo(() => {
-    const reelSource = backendReels;
     if (!selectedSports || selectedSports.length === 0) {
-      return [...reelSource];
+      return [...backendReels];
     }
-    const wantsNFL = selectedSports.includes("NFL");
-    return wantsNFL ? [...reelSource] : [];
+
+    const selectedSet = new Set(selectedSports);
+
+    return backendReels.filter((r) => selectedSet.has(r.sport));
   }, [selectedSports, backendReels]);
+
 
   const data = useMemo(() => [...filtered, { id: "end", isEndMessage: true }], [filtered]);
 
@@ -756,7 +843,6 @@ export default function FeedScreen() {
 
   if (!fontsLoaded) return null;
 
-  // open details: show panel with info
   const handleOpenDetails = (info: any | null) => {
     setDetailsInfo(info ?? null);
     setDetailsVisible(true);
