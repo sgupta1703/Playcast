@@ -1,16 +1,13 @@
-// src/sportsRadar.js
 let fetchFn;
 
 try {
   if (typeof global.fetch === "function") {
     fetchFn = global.fetch.bind(global);
   } else {
-    // Try requiring node-fetch in a way compatible with v2 and v3
     const nf = require("node-fetch");
     fetchFn = nf.default || nf;
   }
 } catch (err) {
-  // no fetch available — throw later when used
   fetchFn = null;
 }
 
@@ -33,10 +30,7 @@ async function fetchJson(url) {
   return r.json();
 }
 
-/**
- * Find a game by season and week and team substring match.
- * Uses season schedule endpoint then filters by week + team names (home/away).
- */
+
 async function findGameByTeams({ season, week, home, away, language = "en" }) {
   try {
     const seasonType = "REG";
@@ -85,9 +79,7 @@ async function findGameByTeams({ season, week, home, away, language = "en" }) {
   }
 }
 
-/**
- * Fetch play-by-play for a given game id
- */
+
 async function getPlayByPlay(gameId, language = "en") {
   try {
     const url = `${SPORTS_RADAR_BASE}/nfl/official/trial/v7/${language}/games/${encodeURIComponent(gameId)}/pbp.json?${qs({ api_key: SPORTS_RADAR_KEY })}`;

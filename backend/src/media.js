@@ -1,4 +1,3 @@
-// src/media.js
 const ffmpeg = require("fluent-ffmpeg");
 const ffmpegPath = require("ffmpeg-static");
 if (ffmpegPath) {
@@ -10,13 +9,10 @@ const fs = require("fs");
 const { ensureDir } = require("./utils");
 const { VIDEO_PATH: CFG_VIDEO_PATH, OUTPUT_DIR: CFG_OUTPUT_DIR } = require("./config");
 
-// Print resolved paths for easier debugging
 console.log("MEDIA: Config VIDEO_PATH:", CFG_VIDEO_PATH);
 console.log("MEDIA: Config OUTPUT_DIR:", CFG_OUTPUT_DIR);
 
-/**
- * Helper to resolve defaults and ensure directories exist.
- */
+
 function resolvePaths({ sourceVideoPath, outputDir } = {}) {
   const source = sourceVideoPath ? path.resolve(sourceVideoPath) : path.resolve(CFG_VIDEO_PATH);
   const outDir = outputDir ? path.resolve(outputDir) : path.resolve(CFG_OUTPUT_DIR);
@@ -28,15 +24,11 @@ function resolvePaths({ sourceVideoPath, outputDir } = {}) {
   return { source, outDir, reelsDir: path.resolve(outDir, "reels"), audioDir: path.resolve(outDir, "audio") };
 }
 
-/**
- * Extract audio from the main video file if it doesn't exist.
- * Accepts optional overrides for sourceVideoPath and outputDir.
- */
+
 async function extractAudioFromVideo({ sourceVideoPath, outputDir } = {}) {
   const { source, audioDir } = resolvePaths({ sourceVideoPath, outputDir });
   const audioPath = path.resolve(audioDir, "game_audio.wav");
 
-  // If already extracted, reuse
   if (fs.existsSync(audioPath)) {
     console.log("Audio file already exists, skipping extraction:", audioPath);
     return audioPath;
@@ -75,14 +67,10 @@ async function extractAudioFromVideo({ sourceVideoPath, outputDir } = {}) {
   });
 }
 
-/**
- * Slice audio: startSeconds, durationSeconds -> writes file path
- * Accepts optional sourceVideoPath and outputDir.
- */
+
 async function sliceAudio({ startSeconds, durationSeconds, outName, sourceVideoPath, outputDir } = {}) {
   const { source, audioDir } = resolvePaths({ sourceVideoPath, outputDir });
 
-  // Ensure main extracted audio exists (extractAudioFromVideo will no-op if file exists)
   const mainAudioPath = await extractAudioFromVideo({ sourceVideoPath: source, outputDir });
 
   outName = outName || `audio-${Date.now()}-${Math.floor(Math.random() * 1000)}.wav`;
@@ -111,10 +99,6 @@ async function sliceAudio({ startSeconds, durationSeconds, outName, sourceVideoP
   });
 }
 
-/**
- * Slice video: startSeconds, durationSeconds -> returns output path
- * Accepts optional sourceVideoPath and outputDir.
- */
 async function sliceVideo({ startSeconds, durationSeconds, outName, sourceVideoPath, outputDir } = {}) {
   const { source, reelsDir, audioDir } = resolvePaths({ sourceVideoPath, outputDir });
 
@@ -141,7 +125,6 @@ async function sliceVideo({ startSeconds, durationSeconds, outName, sourceVideoP
     });
   });
 
-  // If source has audio: create clip including audio (explicit mapping)
   if (hasAudio) {
     return new Promise((resolve, reject) => {
       ffmpeg(source)
@@ -177,7 +160,6 @@ async function sliceVideo({ startSeconds, durationSeconds, outName, sourceVideoP
     });
   }
 
-  // FALLBACK: source has no audio -- create video-only clip then merge with extracted audio if available
   console.log("Source has no audio — creating video-only clip then attempting to merge external audio (if present).");
 
   const tmpVideoPath = outPath + ".video.tmp.mp4";
@@ -185,7 +167,6 @@ async function sliceVideo({ startSeconds, durationSeconds, outName, sourceVideoP
   const audioSliceName = `audio-for-${path.basename(outName, ".mp4")}-${Date.now()}.wav`;
   const audioSlicePath = path.resolve(audioDir, audioSliceName);
 
-  // Step 1: create video-only clip (no audio)
   await new Promise((resolve, reject) => {
     ffmpeg(source)
       .setStartTime(startSeconds)
@@ -196,7 +177,7 @@ async function sliceVideo({ startSeconds, durationSeconds, outName, sourceVideoP
         "-crf 23",
         "-movflags +faststart",
         "-pix_fmt yuv420p",
-        "-an" // no audio
+        "-an" 
       ])
       .output(tmpVideoPath)
       .on("start", (cmd) => console.log("Video-only slice FFmpeg command:", cmd))
@@ -216,10 +197,8 @@ async function sliceVideo({ startSeconds, durationSeconds, outName, sourceVideoP
       .run();
   });
 
-  // If external main audio exists, slice matching audio segment and then merge
   if (fs.existsSync(mainAudioPath)) {
     try {
-      // Slice audio for the same start/duration
       await new Promise((resolve, reject) => {
         ffmpeg(mainAudioPath)
           .setStartTime(startSeconds)
@@ -240,7 +219,6 @@ async function sliceVideo({ startSeconds, durationSeconds, outName, sourceVideoP
           .run();
       });
 
-      // Merge tmpVideoPath + audioSlicePath into final outPath
       await new Promise((resolve, reject) => {
         ffmpeg()
           .input(tmpVideoPath)
@@ -272,14 +250,12 @@ async function sliceVideo({ startSeconds, durationSeconds, outName, sourceVideoP
           .run();
       });
 
-      // Remove tmp files
       try { if (fs.existsSync(tmpVideoPath)) fs.unlinkSync(tmpVideoPath); } catch (e) {}
       try { if (fs.existsSync(audioSlicePath)) fs.unlinkSync(audioSlicePath); } catch (e) {}
 
       return outPath;
     } catch (mergeErr) {
       console.warn("Audio merge fallback failed, returning video-only clip:", mergeErr.message || mergeErr);
-      // If merge failed, fall back to returning the video-only clip (rename it to final outPath)
       try {
         if (fs.existsSync(outPath)) fs.unlinkSync(outPath);
       } catch (e) {}
@@ -287,7 +263,6 @@ async function sliceVideo({ startSeconds, durationSeconds, outName, sourceVideoP
       return outPath;
     }
   } else {
-    // No main audio present — just rename tmp -> final and return
     try {
       if (fs.existsSync(outPath)) fs.unlinkSync(outPath);
     } catch (e) {}
@@ -297,9 +272,7 @@ async function sliceVideo({ startSeconds, durationSeconds, outName, sourceVideoP
   }
 }
 
-/**
- * Small helper: ensure positive duration
- */
+
 function durationDurationCheck(dur) {
   const n = Number(dur);
   return isFinite(n) && n > 0 ? n : 1;

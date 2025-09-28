@@ -1,4 +1,3 @@
-// app/prepare.tsx
 import React, { useEffect, useState, useRef } from "react";
 import { View, Text, StyleSheet, Animated, Easing, Dimensions } from "react-native";
 import { StatusBar } from "expo-status-bar";

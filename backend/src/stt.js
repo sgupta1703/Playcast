@@ -7,7 +7,7 @@ const { GOOGLE_API_KEY } = require("./config");
  * Transcribe a short audio file using Google Speech-to-Text (sync recognize).
  * This method sends base64 audio in the body (works for short samples).
  *
- * @param {string} audioPath - path to local audio file (wav)
+ * @param {string} audioPath 
  * @param {string} [languageCode="en-US"]
  */
 async function transcribeShortAudio({ audioPath, languageCode = "en-US" }) {
@@ -32,7 +32,6 @@ async function transcribeShortAudio({ audioPath, languageCode = "en-US" }) {
 
     const url = `https://speech.googleapis.com/v1/speech:recognize?key=${encodeURIComponent(GOOGLE_API_KEY)}`;
 
-    // Corrected config: remove invalid enableSpeakerDiarization at top-level
     const body = {
       config: {
         encoding: "LINEAR16",
@@ -45,8 +44,6 @@ async function transcribeShortAudio({ audioPath, languageCode = "en-US" }) {
         maxAlternatives: 1,
         profanityFilter: false,
         audioChannelCount: 1,
-        // Uncomment for speaker diarization if needed:
-        // diarizationConfig: { enableSpeakerDiarization: true, minSpeakerCount: 1, maxSpeakerCount: 2 }
       },
       audio: {
         content: bytes,

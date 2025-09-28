@@ -73,7 +73,6 @@ Commentary transcript:
       } catch (e) { /* continue */ }
     }
 
-    // Last resort
     return { goodPlay: false, reason: "Could not parse AI response", score: 0 };
   } catch (err) {
     console.error("AI evaluation error:", err.message);

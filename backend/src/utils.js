@@ -1,4 +1,3 @@
-// src/utils.js
 const fs = require("fs");
 const path = require("path");
 const mkdirp = require("mkdirp");
@@ -18,7 +17,6 @@ function ensureDir(dir) {
 function clockToGameSeconds(quarter, clock) {
   if (!quarter || !clock) return null;
   
-  // Parse clock format (MM:SS)
   const timeParts = clock.toString().split(':');
   if (timeParts.length !== 2) return null;
   
@@ -27,9 +25,7 @@ function clockToGameSeconds(quarter, clock) {
   
   if (isNaN(minutes) || isNaN(seconds)) return null;
   
-  // NFL quarters are 15 minutes each
-  // Clock counts down in each quarter, so we need to convert
-  const quarterLength = 15 * 60; // 900 seconds per quarter
+  const quarterLength = 15 * 60; 
   const timeElapsedInQuarter = quarterLength - (minutes * 60 + seconds);
   const quarterStartTime = (quarter - 1) * quarterLength;
   

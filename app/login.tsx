@@ -1,4 +1,3 @@
-// app/login.tsx
 import React, { useState, useEffect } from "react";
 import {
   View,
@@ -29,7 +28,6 @@ export default function LoginScreen() {
 
   const [fontsLoaded] = useFonts({ Inter_400Regular, Inter_500Medium, Inter_600SemiBold });
 
-  // Only redirect if user is already logged in and we haven't just attempted a login
   useEffect(() => {
     if (user && !authLoading && !hasAttemptedLogin) {
       if (Array.isArray(preferredSports) && preferredSports.length > 0) {
@@ -48,13 +46,11 @@ export default function LoginScreen() {
     setHasAttemptedLogin(true);
     
     try {
-      // attempt sign in
       await signIn(email.trim(), password);
-      // On success, show the "prepare" screen while prefs are fetched and a short animation plays
       router.replace("/prepare");
     } catch (e: any) {
       setError(e?.message ?? "Failed to sign in");
-      setHasAttemptedLogin(false); // Reset on error
+      setHasAttemptedLogin(false);
     } finally {
       setLoading(false);
     }
@@ -101,8 +97,6 @@ export default function LoginScreen() {
           </TouchableOpacity>
         </View>
 
-        <View style={{ height: 40 }} />
-        <Text style={styles.hint}>Test account: use any email + password (signup allowed)</Text>
       </View>
     </KeyboardAvoidingView>
   );

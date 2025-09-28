@@ -32,10 +32,10 @@ app.get("/api/reels", async (req, res) => {
 
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, "0.0.0.0", async () => {
-  console.log(`✅ Server running at:`);
-  console.log(`   • Local:   http://localhost:${PORT}`);
-  console.log(`   • LAN:     http://172.20.0.183:${PORT}`);
-  console.log(`🎥 Serving files from: ${REELS_DIR}`);
+  console.log(`Server running at:`);
+  console.log(`Local:   http://localhost:${PORT}`);
+  console.log(`LAN:     http://172.20.0.183:${PORT}`);
+  console.log(`Serving files from: ${REELS_DIR}`);
 
   try {
     const files = await fs.readdir(REELS_DIR);

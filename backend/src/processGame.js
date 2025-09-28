@@ -1,4 +1,3 @@
-// src/processGame.js
 const { getPlayByPlay } = require("./sportsRadar");
 const { sliceAudio, sliceVideo } = require("./media");
 const { transcribeShortAudio } = require("./stt");
@@ -8,15 +7,146 @@ const path = require("path");
 const { AUDIO_PRE_SECONDS, VIDEO_CLIP_PRE, VIDEO_CLIP_LENGTH, OUTPUT_DIR: CFG_OUTPUT_DIR } = require("./config");
 const { v4: uuidv4 } = require("uuid");
 const fs = require("fs");
+const { ensureDir } = require("./utils");
 
-/**
- * @param {Object} params
- * @param {string} params.gameId - Sportradar game ID (required)
- * @param {number} [params.playLimit=0] - Number of plays to process. 0 => process ALL plays.
- * @param {string} [params.language="en"]
- * @param {string} [params.videoPath] - Optional path to override source video file.
- * @param {string} [params.outputDir] - Optional output directory for reels/audio.
- */
+
+function safeGet(obj, pathParts) {
+  try {
+    return pathParts.reduce((acc, k) => (acc && acc[k] !== undefined) ? acc[k] : undefined, obj);
+  } catch (e) {
+    return undefined;
+  }
+}
+
+
+function extractTeamsAndScore(play, pbp) {
+  const descObj = (play && typeof play.description === "object") ? play.description : null;
+  const raw = play && play.raw ? play.raw : play;
+
+  const pbpSummary = pbp && (pbp.summary || pbp);
+
+  const homeCandidate = descObj?.home || raw?.home || pbpSummary?.home || pbp?.home;
+  const awayCandidate = descObj?.away || raw?.away || pbpSummary?.away || pbp?.away;
+
+  const homeName = safeGet(homeCandidate, ["name"]) || safeGet(homeCandidate, ["market"]) || safeGet(homeCandidate, ["alias"]) || null;
+  const homeAlias = safeGet(homeCandidate, ["alias"]) || null;
+
+  const awayName = safeGet(awayCandidate, ["name"]) || safeGet(awayCandidate, ["market"]) || safeGet(awayCandidate, ["alias"]) || null;
+  const awayAlias = safeGet(awayCandidate, ["alias"]) || null;
+
+  const homePoints =
+    (typeof raw?.home_points === "number" ? raw.home_points : undefined) ||
+    (typeof play?.home_points === "number" ? play.home_points : undefined) ||
+    (descObj && typeof descObj.home?.points === "number" ? descObj.home.points : undefined) ||
+    (pbpSummary && typeof pbpSummary.home?.points === "number" ? pbpSummary.home.points : undefined) ||
+    (pbp && typeof pbp.home?.points === "number" ? pbp.home.points : undefined) ||
+    null;
+
+  const awayPoints =
+    (typeof raw?.away_points === "number" ? raw.away_points : undefined) ||
+    (typeof play?.away_points === "number" ? play.away_points : undefined) ||
+    (descObj && typeof descObj.away?.points === "number" ? descObj.away.points : undefined) ||
+    (pbpSummary && typeof pbpSummary.away?.points === "number" ? pbpSummary.away.points : undefined) ||
+    (pbp && typeof pbp.away?.points === "number" ? pbp.away.points : undefined) ||
+    null;
+
+  return {
+    home: { name: homeName, alias: homeAlias, points: homePoints },
+    away: { name: awayName, alias: awayAlias, points: awayPoints }
+  };
+}
+
+
+function findDescriptionFromObject(obj, seen = new Set()) {
+  if (!obj || typeof obj !== "object") return null;
+  if (seen.has(obj)) return null;
+  seen.add(obj);
+
+  const priorityKeys = ["description", "play_description", "summary", "text", "title", "display_value"];
+
+  for (const k of priorityKeys) {
+    if (typeof obj[k] === "string" && obj[k].trim().length > 0) {
+      return obj[k].trim();
+    }
+  }
+
+  if (Array.isArray(obj.events)) {
+    for (const ev of obj.events) {
+      if (ev && typeof ev.description === "string" && ev.description.trim().length > 0) {
+        return ev.description.trim();
+      }
+      const evFound = findDescriptionFromObject(ev, seen);
+      if (evFound) return evFound;
+    }
+  }
+
+  for (const k of Object.keys(obj)) {
+    const v = obj[k];
+    if (typeof v === "string" && v.trim().length > 0 && (/desc|summary|text|play/i).test(k)) {
+      return v.trim();
+    }
+  }
+
+  for (const k of Object.keys(obj)) {
+    const v = obj[k];
+    if (Array.isArray(v)) {
+      for (const item of v) {
+        const found = findDescriptionFromObject(item, seen);
+        if (found) return found;
+      }
+    } else if (v && typeof v === "object") {
+      const found = findDescriptionFromObject(v, seen);
+      if (found) return found;
+    }
+  }
+
+  return null;
+}
+
+function extractPlayDescription(play, pbp) {
+  if (!play) return "";
+
+  if (typeof play.description === "string" && play.description.trim().length > 0) {
+    return play.description.trim();
+  }
+
+  if (typeof play.play_description === "string" && play.play_description.trim().length > 0) {
+    return play.play_description.trim();
+  }
+
+  if (typeof play.summary === "string" && play.summary.trim().length > 0) {
+    return play.summary.trim();
+  }
+
+  if (play.raw && typeof play.raw.description === "string" && play.raw.description.trim().length > 0) {
+    return play.raw.description.trim();
+  }
+
+  if (play.description && typeof play.description === "object") {
+    const found = findDescriptionFromObject(play.description);
+    if (found) return found;
+  }
+
+  if (play.raw && Array.isArray(play.raw.events)) {
+    for (const ev of play.raw.events) {
+      if (ev && typeof ev.description === "string" && ev.description.trim().length > 0) {
+        return ev.description.trim();
+      }
+      const found = findDescriptionFromObject(ev);
+      if (found) return found;
+    }
+  }
+
+  if (pbp) {
+    const summary = pbp.summary || pbp;
+    const foundFromPbp = findDescriptionFromObject(summary);
+    if (foundFromPbp) return foundFromPbp;
+  }
+
+  return "";
+}
+
+
 async function processGameJob({ gameId, playLimit = 0, language = "en", videoPath, outputDir } = {}) {
   const jobId = uuidv4();
   const startTime = Date.now();
@@ -31,13 +161,11 @@ async function processGameJob({ gameId, playLimit = 0, language = "en", videoPat
     if (videoPath) out.logs.push(`Using override VIDEO PATH: ${videoPath}`);
     if (outputDir) out.logs.push(`Using override OUTPUT DIR: ${outputDir}`);
 
-    // Step 1: Fetch play-by-play
     out.logs.push(`Fetching play-by-play for game id ${gameId}`);
     const pbp = await getPlayByPlay(gameId, language);
 
     if (!pbp) throw new Error("Failed to fetch play-by-play data");
 
-    // Step 2: Extract plays (universal recursive extraction)
     let plays = [];
     function extractPlays(obj) {
       if (!obj || typeof obj !== "object") return [];
@@ -53,7 +181,6 @@ async function processGameJob({ gameId, playLimit = 0, language = "en", videoPat
           try {
             found.push(...extractPlays(obj[key]));
           } catch (e) {
-            // ignore
           }
         }
       }
@@ -69,16 +196,16 @@ async function processGameJob({ gameId, playLimit = 0, language = "en", videoPat
 
     out.logs.push(`Total plays available: ${plays.length}`);
 
-    // Decide how many plays to process: if playLimit <= 0 => process all
     const limit = playLimit && Number(playLimit) > 0 ? Math.min(Number(playLimit), plays.length) : plays.length;
     out.logs.push(`Will process top ${limit} plays (playLimit param = ${playLimit})`);
 
-    // Prepare reels output dir (use override or config)
-    const reelsDir = outputDir ? path.resolve(outputDir, "reels") : path.resolve(CFG_OUTPUT_DIR, "reels");
-    try { fs.mkdirSync(reelsDir, { recursive: true }); } catch (e) { /* ignore */ }
+    const baseOutDir = outputDir ? path.resolve(outputDir) : path.resolve(CFG_OUTPUT_DIR);
+    const reelsDir = path.resolve(baseOutDir, "reels");
+    const infoDir = path.resolve(baseOutDir, "info");
+    try { ensureDir(reelsDir); ensureDir(infoDir); } catch (e) { /* ignore */ }
     out.logs.push(`Reels will be written to: ${reelsDir}`);
+    out.logs.push(`Info files will be written to: ${infoDir}`);
 
-    // compute starting sequence number by scanning existing reelN files to avoid overwrite
     let reelSeq = 1;
     try {
       const existing = fs.readdirSync(reelsDir).filter((f) => /^reel\d+\.mp4$/i.test(f));
@@ -92,7 +219,6 @@ async function processGameJob({ gameId, playLimit = 0, language = "en", videoPat
         }
       }
     } catch (e) {
-      // if reading dir fails we'll start at 1
       out.logs.push(`Could not read existing reels folder to determine sequence start: ${String(e.message || e)}`);
       reelSeq = 1;
     }
@@ -104,14 +230,12 @@ async function processGameJob({ gameId, playLimit = 0, language = "en", videoPat
     const forceReels = (process.env.FORCE_CREATE_REELS === "true");
     out.logs.push(`Processing ${limit} plays (forceReels=${forceReels})...`);
 
-    // helper: choose next non-colliding reel filename (reelN.mp4)
     function getNextReelName() {
       let seq = reelSeq;
       while (true) {
         const candidate = `reel${seq}.mp4`;
         const full = path.join(reelsDir, candidate);
         if (!fs.existsSync(full)) {
-          // reserve it by incrementing reelSeq for next call
           reelSeq = seq + 1;
           return candidate;
         }
@@ -124,7 +248,7 @@ async function processGameJob({ gameId, playLimit = 0, language = "en", videoPat
       try {
         const quarter = play.quarter || play.period || 1;
         const clock = play.clock || play.game_clock || null;
-        const desc = play.description || play.summary || JSON.stringify(play).slice(0, 200);
+        const descText = extractPlayDescription(play);
         const gameSeconds = clockToGameSeconds(Number(quarter), clock);
         if (gameSeconds === null) {
           out.logs.push(`Skipping play #${i + 1}: invalid/missing clock info (Q${quarter}, ${clock})`);
@@ -137,7 +261,7 @@ async function processGameJob({ gameId, playLimit = 0, language = "en", videoPat
 
         let audioPath;
         try {
-          audioPath = await sliceAudio({ startSeconds: audioStart, durationSeconds: audioDuration, outName: audioFileName, sourceVideoPath: videoPath, outputDir });
+          audioPath = await sliceAudio({ startSeconds: audioStart, durationSeconds: audioDuration, outName: audioFileName, sourceVideoPath: videoPath, outputDir: baseOutDir });
           out.logs.push(`Audio sliced: ${path.basename(audioPath)}`);
         } catch (err) {
           out.errors.push(`Play ${i + 1} audio slice: ${err.message}`);
@@ -155,7 +279,7 @@ async function processGameJob({ gameId, playLimit = 0, language = "en", videoPat
           transcript = "";
         }
 
-        const playMeta = { id: play.id || `play-${i + 1}`, quarter, clock, description: desc, gameSeconds, raw: play };
+        const playMeta = { id: play.id || `play-${i + 1}`, quarter, clock, description: descText, gameSeconds, raw: play };
 
         let evalResult;
         try {
@@ -184,7 +308,6 @@ async function processGameJob({ gameId, playLimit = 0, language = "en", videoPat
         if (evalResult && evalResult.goodPlay) {
           const clipStart = Math.max(0, gameSeconds - VIDEO_CLIP_PRE);
 
-          // Build sequential reel filename
           let reelName = getNextReelName();
           const reelFullPath = path.join(reelsDir, reelName);
 
@@ -194,13 +317,34 @@ async function processGameJob({ gameId, playLimit = 0, language = "en", videoPat
               durationSeconds: VIDEO_CLIP_LENGTH,
               outName: reelName,
               sourceVideoPath: videoPath,
-              outputDir
+              outputDir: baseOutDir
             });
 
-            // Ensure returned path is the file we expect; some functions may return absolute path
             const reelBasename = path.basename(reelPath || reelFullPath || reelName);
 
-            out.reels.push({ playId: playMeta.id, reelPath, eval: evalResult, transcript, playMeta, file: reelBasename });
+            const teams = extractTeamsAndScore(play, pbp);
+            const minimalInfo = {
+              createdAt: new Date().toISOString(),
+              jobId,
+              playIndex: i + 1,
+              quarter,
+              clock,
+              teams, 
+              description: descText || ""
+            };
+
+            const infoFilename = reelBasename.replace(/\.mp4$/i, ".txt");
+            const infoFullPath = path.join(infoDir, infoFilename);
+
+            try {
+              fs.writeFileSync(infoFullPath, JSON.stringify(minimalInfo, null, 2), "utf8");
+              out.logs.push(`INFO FILE CREATED: ${infoFilename}`);
+            } catch (writeErr) {
+              out.errors.push(`Failed to write info file for ${reelBasename}: ${writeErr.message}`);
+              out.logs.push(`Info write failed for ${reelBasename}: ${writeErr.message}`);
+            }
+
+            out.reels.push({ playId: playMeta.id, reelPath, eval: evalResult, transcript, playMeta, file: reelBasename, infoFile: infoFilename });
             reelsCreated++;
             out.logs.push(`REEL CREATED: ${reelBasename}`);
           } catch (err) {
@@ -214,7 +358,6 @@ async function processGameJob({ gameId, playLimit = 0, language = "en", videoPat
         results.push({ playMeta, transcript, evalResult });
         processedCount++;
 
-        // Clean up audio slice
         try { if (audioPath && fs.existsSync(audioPath)) fs.unlinkSync(audioPath); } catch (e) { /* ignore */ }
 
       } catch (err) {
